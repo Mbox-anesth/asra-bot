@@ -82,7 +82,13 @@ def initialize_bot():
     return bot_app
 
 async def _setup_bot_async():
-    app_bot = Application.builder().token(TOKEN).build()
+    # Costruzione alternativa per evitare il problema con l'Updater
+    app_bot = (
+        Application.builder()
+        .token(TOKEN)
+        # .updater(None)  # A volte forzare l'assenza di un updater aiuta, proviamo senza prima
+        .build()
+    )
     app_bot.add_handler(CommandHandler("start", start))
     app_bot.add_handler(CallbackQueryHandler(menu_farmaci, pattern="^menu_farmaci$"))
     app_bot.add_handler(CallbackQueryHandler(menu_principale, pattern="^menu_principale$"))
@@ -92,6 +98,7 @@ async def _setup_bot_async():
     app_bot.add_handler(CallbackQueryHandler(mostra_raccomandazione, pattern="^blocco_"))
     await app_bot.initialize()
     await app_bot.start()
+    logger.info("✅ Bot Telegram avviato con successo (setup asincrono alternativo)")
     return app_bot
 
 # HANDLER TELEGRAM
