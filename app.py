@@ -279,7 +279,7 @@ async def setup_bot():
 # FLASK ENDPOINTS
 @app.route('/')
 def home():
-    return "Bot ASRA attivo! Visita https://t.me/IL_TUO_BOT_USERNAME"
+    return "Bot ASRA attivo! Visita https://t.me/asra_guidelines_bot"
 
 @app.route('/webhook', methods=['POST'])
 async def webhook():
