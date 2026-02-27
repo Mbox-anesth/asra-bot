@@ -168,6 +168,7 @@ BLOCCHI = {
 
 user_state = {}
 
+# HANDLER TELEGRAM
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
     logger.info(f"✅ /start ricevuto da user {update.effective_user.id}")
     keyboard = [[InlineKeyboardButton("💊 Seleziona Farmaco", callback_data="menu_farmaci")]]
@@ -328,12 +329,13 @@ async def menu_principale(update: Update, context: ContextTypes.DEFAULT_TYPE):
         parse_mode="Markdown"
     )
 
+# FUNZIONE PER AVVIARE IL BOT IN BACKGROUND
 def run_bot():
     """Avvia il bot in un thread separato con loop permanente"""
     global bot_app, bot_loop, bot_ready
     
     async def bot_main():
-        nonlocal bot_app, bot_loop
+        global bot_app, bot_loop, bot_ready
         bot_loop = asyncio.get_running_loop()
         
         logger.info("🔄 Avvio bot in background...")
@@ -372,6 +374,7 @@ bot_thread.start()
 time.sleep(5)
 logger.info("🚀 Server Flask in avvio...")
 
+# FLASK ENDPOINTS
 @app.route('/')
 def home():
     return "Bot Anticoagulanti & Anestesia attivo! Cerca su Telegram: @AnticoagulantiEanestesiabot"
@@ -410,6 +413,8 @@ def webhook():
         future.result(timeout=10)
         logger.info("✅ Update processato con successo")
         
+    except asyncio.TimeoutError:
+        logger.error("⏰ Timeout nel processare l'update")
     except Exception as e:
         logger.error(f"❌ Errore nel webhook: {e}", exc_info=True)
     
