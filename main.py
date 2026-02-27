@@ -17,12 +17,6 @@ logging.basicConfig(
 )
 logger = logging.getLogger(__name__)
 
-# Verifica versione Python
-if sys.version_info >= (3, 14):
-    print("❌ Questo bot richiede Python 3.11 o inferiore!")
-    print(f"🔴 Versione Python rilevata: {sys.version}")
-    sys.exit(1)
-
 # STAMP SUBITO PER DEBUG
 print(f"""
 🔴🔴🔴🔴🔴🔴🔴🔴🔴🔴🔴🔴🔴🔴🔴🔴🔴🔴🔴🔴🔴🔴🔴🔴🔴🔴🔴
@@ -35,10 +29,10 @@ app = Flask(__name__)
 # TOKEN
 TOKEN = "8785372321:AAGhzTMpd7rH6du_Ct2ClkAjNL2rjs9U9Tk"
 
-# Variabile globale e lock per sicurezza
+# Variabili globali
 bot_app = None
-bot_init_lock = threading.Lock()
-bot_loop = None  # Salva il loop separatamente
+bot_loop = None
+bot_ready = False
 
 # DATI LINEE GUIDA ASRA
 FARMACI = {
@@ -174,45 +168,6 @@ BLOCCHI = {
 
 user_state = {}
 
-# FUNZIONE PER INIZIALIZZARE IL BOT (in modo sincrono)
-def initialize_bot():
-    global bot_app, bot_loop
-    with bot_init_lock:
-        if bot_app is None:
-            logger.info("🔄 Inizializzazione bot in corso...")
-            bot_loop = asyncio.new_event_loop()
-            asyncio.set_event_loop(bot_loop)
-            bot_app = bot_loop.run_until_complete(_setup_bot_async())
-            logger.info("✅ Bot inizializzato con successo!")
-    return bot_app
-
-async def _setup_bot_async():
-    """Inizializza il bot Telegram in modo asincrono"""
-    logger.info("🔄 Creazione Application...")
-    
-    # Versione con build esplicita per Python 3.11
-    builder = Application.builder().token(TOKEN)
-    
-    # Disabilita updater (non necessario per webhook)
-    builder.updater(None)
-    
-    app_bot = builder.build()
-    
-    # Aggiungi handler
-    app_bot.add_handler(CommandHandler("start", start))
-    app_bot.add_handler(CallbackQueryHandler(menu_farmaci, pattern="^menu_farmaci$"))
-    app_bot.add_handler(CallbackQueryHandler(menu_principale, pattern="^menu_principale$"))
-    app_bot.add_handler(CallbackQueryHandler(menu_dosaggio, pattern="^farmaco_"))
-    app_bot.add_handler(CallbackQueryHandler(menu_categoria_blocco, pattern="^dosaggio_"))
-    app_bot.add_handler(CallbackQueryHandler(menu_blocchi, pattern="^cat_"))
-    app_bot.add_handler(CallbackQueryHandler(mostra_raccomandazione, pattern="^blocco_"))
-    
-    await app_bot.initialize()
-    await app_bot.start()
-    logger.info("✅ Bot Telegram avviato con successo")
-    return app_bot
-
-# HANDLER TELEGRAM
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
     logger.info(f"✅ /start ricevuto da user {update.effective_user.id}")
     keyboard = [[InlineKeyboardButton("💊 Seleziona Farmaco", callback_data="menu_farmaci")]]
@@ -373,7 +328,50 @@ async def menu_principale(update: Update, context: ContextTypes.DEFAULT_TYPE):
         parse_mode="Markdown"
     )
 
-# FLASK ENDPOINTS
+def run_bot():
+    """Avvia il bot in un thread separato con loop permanente"""
+    global bot_app, bot_loop, bot_ready
+    
+    async def bot_main():
+        nonlocal bot_app, bot_loop
+        bot_loop = asyncio.get_running_loop()
+        
+        logger.info("🔄 Avvio bot in background...")
+        
+        # Crea l'applicazione
+        builder = Application.builder().token(TOKEN)
+        builder.updater(None)
+        bot_app = builder.build()
+        
+        # Aggiungi handler
+        bot_app.add_handler(CommandHandler("start", start))
+        bot_app.add_handler(CallbackQueryHandler(menu_farmaci, pattern="^menu_farmaci$"))
+        bot_app.add_handler(CallbackQueryHandler(menu_principale, pattern="^menu_principale$"))
+        bot_app.add_handler(CallbackQueryHandler(menu_dosaggio, pattern="^farmaco_"))
+        bot_app.add_handler(CallbackQueryHandler(menu_categoria_blocco, pattern="^dosaggio_"))
+        bot_app.add_handler(CallbackQueryHandler(menu_blocchi, pattern="^cat_"))
+        bot_app.add_handler(CallbackQueryHandler(mostra_raccomandazione, pattern="^blocco_"))
+        
+        await bot_app.initialize()
+        await bot_app.start()
+        
+        bot_ready = True
+        logger.info("✅ Bot avviato e pronto!")
+        
+        # Mantieni il bot in esecuzione
+        while True:
+            await asyncio.sleep(1)
+    
+    asyncio.run(bot_main())
+
+# Avvia il bot in un thread separato
+bot_thread = threading.Thread(target=run_bot, daemon=True)
+bot_thread.start()
+
+# Attendi che il bot sia pronto
+time.sleep(5)
+logger.info("🚀 Server Flask in avvio...")
+
 @app.route('/')
 def home():
     return "Bot Anticoagulanti & Anestesia attivo! Cerca su Telegram: @AnticoagulantiEanestesiabot"
@@ -382,14 +380,8 @@ def home():
 def webhook():
     logger.info("🔵 WEBHOOK CHIAMATO - INIZIO")
     
-    # Inizializza il bot se non lo è già (thread-safe)
-    global bot_app, bot_loop
-    if bot_app is None:
-        logger.warning("⚠️ bot_app non inizializzato, inizializzazione ora...")
-        bot_app = initialize_bot()
-    
-    if not bot_app:
-        logger.error("❌ Impossibile inizializzare bot_app")
+    if not bot_ready:
+        logger.warning("⚠️ Bot non ancora pronto")
         return "OK", 200
     
     if not request.is_json:
@@ -409,12 +401,7 @@ def webhook():
         update = Update.de_json(update_data, bot_app.bot)
         logger.info("✅ Oggetto Update creato")
         
-        # Usa il loop salvato globalmente
-        if not bot_loop:
-            logger.error("❌ bot_loop non trovato")
-            return "OK", 200
-        
-        logger.info(f"🔄 Loop running: {bot_loop.is_running()}")
+        logger.info(f"🔄 Invio update al bot...")
         
         future = asyncio.run_coroutine_threadsafe(
             bot_app.process_update(update),
@@ -423,8 +410,6 @@ def webhook():
         future.result(timeout=10)
         logger.info("✅ Update processato con successo")
         
-    except asyncio.TimeoutError:
-        logger.error("⏰ Timeout nel processare l'update")
     except Exception as e:
         logger.error(f"❌ Errore nel webhook: {e}", exc_info=True)
     
@@ -433,16 +418,10 @@ def webhook():
 
 @app.route('/health')
 def health():
-    return "OK", 200
+    status = "ready" if bot_ready else "starting"
+    return f"Bot status: {status}", 200
 
 if __name__ == "__main__":
     port = int(os.environ.get("PORT", 5000))
-    
-    # Verifica Python version
-    logger.info(f"🐍 Python version: {sys.version}")
-    
-    # Piccola pausa per sicurezza
-    time.sleep(2)
-    
     logger.info(f"🚀 Avvio server Flask sulla porta {port}")
     app.run(host="0.0.0.0", port=port)
