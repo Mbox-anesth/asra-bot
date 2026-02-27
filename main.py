@@ -5,7 +5,8 @@ import asyncio
 import time
 from flask import Flask, request
 from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup, Bot
-from telegram.ext import Application, CommandHandler, CallbackQueryHandler, ContextTypes
+from telegram.ext import Application, CommandHandler, CallbackQueryHandler, ContextTypes, MessageHandler
+from telegram import filters
 
 # Configurazione logging
 logging.basicConfig(
@@ -324,6 +325,11 @@ async def menu_principale(update: Update, context: ContextTypes.DEFAULT_TYPE):
         parse_mode="Markdown"
     )
 
+async def echo_all(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """Risponde a qualsiasi messaggio non gestito"""
+    logger.info(f"📨 Echo handler: {update.message.text}")
+    await update.message.reply_text(f"Hai scritto: {update.message.text}")
+
 async def setup_application():
     """Setup dell'applicazione Telegram"""
     global application
@@ -339,6 +345,9 @@ async def setup_application():
     application.add_handler(CallbackQueryHandler(menu_categoria_blocco, pattern="^dosaggio_"))
     application.add_handler(CallbackQueryHandler(menu_blocchi, pattern="^cat_"))
     application.add_handler(CallbackQueryHandler(mostra_raccomandazione, pattern="^blocco_"))
+    
+    # Handler echo per messaggi non gestiti
+    application.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, echo_all))
     
     await application.initialize()
     await application.start()
@@ -395,6 +404,7 @@ def webhook():
     logger.info("🔵 FUNZIONE WEBHOOK CHIAMATA - FINE")
     logger.info("="*50)
     return "OK", 200
+
 @app.route('/test')
 def test():
     """Test connessione Telegram"""
@@ -406,9 +416,10 @@ def test():
 
 @app.route('/health')
 def health():
-    return "OK", 200
+    status = "ready" if bot_ready else "starting"
+    return f"Bot status: {status}", 200
 
 if __name__ == "__main__":
     port = int(os.environ.get("PORT", 5000))
-    logger.info(f"🚀 Server Flask su porta {port}")
+    logger.info(f"🚀 Avvio server Flask sulla porta {port}")
     app.run(host="0.0.0.0", port=port)
