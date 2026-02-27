@@ -346,30 +346,55 @@ def home():
 
 @app.route('/webhook', methods=['POST'])
 def webhook():
-    logger.info("🔵 WEBHOOK CHIAMATO")
-    if bot_app and request.is_json:
-        try:
-            update_data = request.get_json(force=True)
-            logger.info(f"📩 Update ID: {update_data.get('update_id')}")
-            
-            update = Update.de_json(update_data, bot_app.bot)
-            
-            if bot_app.loop and bot_app.loop.is_running():
-                future = asyncio.run_coroutine_threadsafe(
-                    bot_app.process_update(update),
-                    bot_app.loop
-                )
-                future.result(timeout=5)
-                logger.info("✅ Update processato")
-            else:
-                loop = asyncio.new_event_loop()
-                asyncio.set_event_loop(loop)
-                loop.run_until_complete(bot_app.process_update(update))
-                loop.close()
-                
-        except Exception as e:
-            logger.error(f"❌ Errore: {e}", exc_info=True)
+    logger.info("🔵 WEBHOOK CHIAMATO - INIZIO")
     
+    if not bot_app:
+        logger.error("❌ bot_app non inizializzato")
+        return "OK", 200
+    
+    if not request.is_json:
+        logger.error("❌ Richiesta non JSON")
+        return "OK", 200
+    
+    try:
+        # Ottieni i dati JSON
+        update_data = request.get_json(force=True)
+        logger.info(f"📩 Update ricevuto - ID: {update_data.get('update_id')}")
+        
+        # Log del contenuto del messaggio
+        if 'message' in update_data:
+            message = update_data['message']
+            logger.info(f"📩 Messaggio da user {message.get('from', {}).get('id')}: {message.get('text')}")
+        elif 'callback_query' in update_data:
+            logger.info(f"📩 Callback query: {update_data['callback_query'].get('data')}")
+        
+        # Crea l'oggetto Update
+        update = Update.de_json(update_data, bot_app.bot)
+        logger.info("✅ Oggetto Update creato")
+        
+        # Verifica che il loop esista
+        if not bot_app.loop:
+            logger.error("❌ bot_app.loop non esiste")
+            return "OK", 200
+        
+        logger.info(f"🔄 Loop running: {bot_app.loop.is_running()}")
+        
+        # Processa l'update
+        future = asyncio.run_coroutine_threadsafe(
+            bot_app.process_update(update),
+            bot_app.loop
+        )
+        
+        # Aspetta il risultato
+        future.result(timeout=10)
+        logger.info("✅ Update processato con successo")
+        
+    except asyncio.TimeoutError:
+        logger.error("⏰ Timeout nel processare l'update")
+    except Exception as e:
+        logger.error(f"❌ Errore nel webhook: {e}", exc_info=True)
+    
+    logger.info("🔵 WEBHOOK CHIAMATO - FINE")
     return "OK", 200
 
 @app.route('/health')
