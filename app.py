@@ -5,14 +5,19 @@ from flask import Flask, request
 from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup
 from telegram.ext import Application, CommandHandler, CallbackQueryHandler, ContextTypes
 
-# Configurazione
-logging.basicConfig(format='%(asctime)s - %(name)s - %(levelname)s - %(message)s', level=logging.INFO)
+# Configurazione logging
+logging.basicConfig(
+    format='%(asctime)s - %(name)s - %(levelname)s - %(message)s',
+    level=logging.INFO
+)
+logger = logging.getLogger(__name__)
+
 app = Flask(__name__)
 
-# TOKEN completo
-TOKEN = "8775885572:AAEroINg6VQG4_qoGhTot4odcIssukEcWFA"
+# TOKEN del nuovo bot
+TOKEN = "8785372321:AAGhzTMpd7rH6du_Ct2ClkAjNL2rjs9U9Tk"
 
-# DATI LINEE GUIDA ASRA
+# DATI LINEE GUIDA ASRA (aggiornati con tutti i farmaci)
 FARMACI = {
     "apixaban": {"nome": "Apixaban", "categoria": "DOACs"},
     "rivaroxaban": {"nome": "Rivaroxaban", "categoria": "DOACs"},
@@ -22,10 +27,14 @@ FARMACI = {
     "prasugrel": {"nome": "Prasugrel", "categoria": "Antipiastrinici"},
     "ticagrelor": {"nome": "Ticagrelor", "categoria": "Antipiastrinici"},
     "ufh_iv": {"nome": "UFH endovena", "categoria": "Eparine"},
+    "ufh_sc_bassa": {"nome": "UFH sottocute (bassa dose)", "categoria": "Eparine"},
     "lmwh_bassa": {"nome": "LMWH bassa dose", "categoria": "Eparine"},
     "lmwh_alta": {"nome": "LMWH alta dose", "categoria": "Eparine"},
+    "fondaparinux": {"nome": "Fondaparinux", "categoria": "Altri"},
+    "aspirina": {"nome": "Aspirina/FANS", "categoria": "Antipiastrinici"},
 }
 
+# Linee guida complete
 LINEE_GUIDA = {
     ("apixaban", "alta"): {
         "sospensione": "≥ 72 ore",
@@ -57,6 +66,12 @@ LINEE_GUIDA = {
         "prima_dose": "≥ 24h dopo rimozione catetere",
         "warning": "• Evitare se CrCl<30\n• Target accettabile: <30 ng/mL"
     },
+    ("dabigatran", "bassa"): {
+        "sospensione": "≥ 48 ore",
+        "riferimento": "Ultima dose",
+        "prima_dose": "≥ 6h dopo posizionamento/rimozione",
+        "warning": "• Target accettabile: <30 ng/mL"
+    },
     ("warfarin", None): {
         "sospensione": "≥ 5 giorni",
         "riferimento": "Ultima dose",
@@ -75,15 +90,59 @@ LINEE_GUIDA = {
         "prima_dose": "Immediatamente dopo (senza dose di carico)",
         "warning": "• Cateteri NON devono essere mantenuti"
     },
+    ("ticagrelor", None): {
+        "sospensione": "5 giorni",
+        "riferimento": "Ultima dose",
+        "prima_dose": "Immediatamente dopo (senza dose di carico)",
+        "warning": "• Cateteri NON devono essere mantenuti"
+    },
+    ("ufh_iv", None): {
+        "sospensione": "Sospendere infusione 4-6h prima",
+        "riferimento": "Ultima dose",
+        "prima_dose": "1h dopo procedura",
+        "warning": "• Valutare stato coagulazione (aPTT) e normalizzarlo prima della procedura"
+    },
+    ("ufh_sc_bassa", None): {
+        "sospensione": "≥ 4-6 ore",
+        "riferimento": "Ultima dose",
+        "prima_dose": "Immediatamente dopo rimozione catetere",
+        "warning": "• Si possono mantenere cateteri. Rimuovere ≥4-6h dopo ultima dose"
+    },
+    ("lmwh_bassa", None): {
+        "sospensione": "≥ 12 ore",
+        "riferimento": "Ultima dose",
+        "prima_dose": "Singola/die: 12h dopo. Due volte/die: giorno dopo",
+        "warning": "• Considerare test aXa se <12h. Target aXa ≤0.1 IU/mL"
+    },
+    ("lmwh_alta", None): {
+        "sospensione": "≥ 24 ore",
+        "riferimento": "Ultima dose",
+        "prima_dose": "≥24h dopo intervento ad alto rischio",
+        "warning": "• Considerare test aXa se <24h. Target aXa ≤0.1 IU/mL"
+    },
+    ("fondaparinux", "bassa"): {
+        "sospensione": "36-42 ore",
+        "riferimento": "Ultima dose",
+        "prima_dose": "≥6h dopo rimozione catetere",
+        "warning": "• Considerare test aXa (calibrato). Target aXa ≤0.1 IU/mL"
+    },
+    ("aspirina", None): {
+        "sospensione": "Nessuna specifica",
+        "riferimento": "-",
+        "prima_dose": "-",
+        "warning": "• Gli NSAIDs non rappresentano un rischio aggiuntivo significativo"
+    },
 }
 
+# Classificazione blocchi
 BLOCCHI = {
     "superficiali": [
         "Sottotenoniano", "PECS I", "PECS II", "Serratus block", 
-        "Fascia iliaca", "Safeno", "Blocchi terminali", "TAP block", "Rectus sheath"
+        "Fascia iliaca", "Safeno (canale adduttorio)", "Blocchi terminali distali",
+        "TAP block", "Rectus sheath"
     ],
     "profondi": [
-        "Retrobulbare", "Peribulbare", "PENG block", "Plesso lombare",
+        "Retrobulbare", "Peribulbare", "PENG block", "Plesso lombare (psoas)",
         "Paravertebrale", "Sciatico prossimale", "Interscalenico", 
         "Sovraclaveare", "Infraclavicolare"
     ],
@@ -96,6 +155,8 @@ user_state = {}
 
 # HANDLER TELEGRAM
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """Handler per il comando /start"""
+    logger.info(f"Comando /start ricevuto da user {update.effective_user.id}")
     keyboard = [[InlineKeyboardButton("💊 Seleziona Farmaco", callback_data="menu_farmaci")]]
     await update.message.reply_text(
         "👋 **Anticoagulanti & Anestesia** - Linee Guida ASRA 5a edizione (2025)\n\n"
@@ -107,6 +168,7 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
     )
 
 async def menu_farmaci(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """Mostra la lista dei farmaci"""
     query = update.callback_query
     await query.answer()
     
@@ -122,13 +184,15 @@ async def menu_farmaci(update: Update, context: ContextTypes.DEFAULT_TYPE):
     )
 
 async def menu_dosaggio(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """Mostra opzioni dosaggio per i farmaci che lo richiedono"""
     query = update.callback_query
     await query.answer()
     
     farmaco_id = query.data.replace("farmaco_", "")
     user_state[query.from_user.id] = {"farmaco": farmaco_id}
     
-    if farmaco_id in ["apixaban", "rivaroxaban", "dabigatran"]:
+    # Farmaci che hanno due dosaggi
+    if farmaco_id in ["apixaban", "rivaroxaban", "dabigatran", "fondaparinux"]:
         keyboard = [
             [InlineKeyboardButton("💉 Alta dose", callback_data=f"dosaggio_{farmaco_id}_alta")],
             [InlineKeyboardButton("💊 Bassa dose", callback_data=f"dosaggio_{farmaco_id}_bassa")],
@@ -143,6 +207,7 @@ async def menu_dosaggio(update: Update, context: ContextTypes.DEFAULT_TYPE):
         await menu_categoria_blocco(update, context, farmaco_id, None)
 
 async def menu_categoria_blocco(update: Update, context: ContextTypes.DEFAULT_TYPE, farmaco_id=None, dosaggio=None):
+    """Mostra le categorie di blocchi"""
     query = update.callback_query
     if query:
         await query.answer()
@@ -170,6 +235,7 @@ async def menu_categoria_blocco(update: Update, context: ContextTypes.DEFAULT_TY
     )
 
 async def menu_blocchi(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """Mostra i blocchi di una categoria specifica"""
     query = update.callback_query
     await query.answer()
     
@@ -198,6 +264,7 @@ async def menu_blocchi(update: Update, context: ContextTypes.DEFAULT_TYPE):
     )
 
 async def mostra_raccomandazione(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """Mostra la raccomandazione finale"""
     query = update.callback_query
     await query.answer()
     
@@ -246,6 +313,7 @@ async def mostra_raccomandazione(update: Update, context: ContextTypes.DEFAULT_T
     )
 
 async def menu_principale(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """Torna al menu principale"""
     query = update.callback_query
     await query.answer()
     keyboard = [[InlineKeyboardButton("💊 Seleziona Farmaco", callback_data="menu_farmaci")]]
@@ -259,6 +327,7 @@ async def menu_principale(update: Update, context: ContextTypes.DEFAULT_TYPE):
 bot_app = None
 
 async def setup_bot():
+    """Inizializza il bot Telegram"""
     global bot_app
     bot_app = Application.builder().token(TOKEN).build()
     
@@ -275,48 +344,53 @@ async def setup_bot():
     
     await bot_app.initialize()
     await bot_app.start()
+    logger.info("Bot Telegram avviato con successo")
     return bot_app
 
 # FLASK ENDPOINTS
 @app.route('/')
 def home():
-    return "Bot Anticoagulanti & Anestesia attivo! Cerca su Telegram: @AnticoagulantiAnestesiaBot"
+    """Home page"""
+    return "Bot Anticoagulanti & Anestesia attivo! Cerca su Telegram: @AnticoagulantiEanestesiabot"
 
 @app.route('/webhook', methods=['POST'])
 def webhook():
+    """Endpoint per i webhook di Telegram"""
     if bot_app and request.is_json:
         try:
-            # Otteniamo i dati JSON dalla richiesta
+            # Ottieni i dati JSON
             update_data = request.get_json(force=True)
+            logger.debug(f"Webhook ricevuto: {update_data.get('update_id')}")
             
-            # Creiamo l'oggetto Update
+            # Crea l'oggetto Update
             update = Update.de_json(update_data, bot_app.bot)
             
-            # Eseguiamo l'update in modo asincrono usando il loop del bot
-            if bot_app.loop.is_running():
+            # Processa l'update in modo asincrono
+            if bot_app.loop and bot_app.loop.is_running():
                 asyncio.run_coroutine_threadsafe(
                     bot_app.process_update(update),
                     bot_app.loop
                 )
             else:
-                # Fallback: eseguiamo in un loop separato
+                # Fallback: esegui in un loop separato
                 loop = asyncio.new_event_loop()
                 asyncio.set_event_loop(loop)
                 loop.run_until_complete(bot_app.process_update(update))
                 loop.close()
                 
         except Exception as e:
-            logging.error(f"Errore nel webhook: {e}")
+            logger.error(f"Errore nel webhook: {e}", exc_info=True)
     
     return "OK", 200
 
 @app.route('/health')
 def health():
+    """Health check per Render"""
     return "OK", 200
 
 # AVVIO
 if __name__ == "__main__":
-    # Configurazione per il deploy
+    # Configurazione porta per Render
     port = int(os.environ.get("PORT", 5000))
     
     # Avvia il bot in background
@@ -325,4 +399,5 @@ if __name__ == "__main__":
     loop.run_until_complete(setup_bot())
     
     # Avvia Flask
+    logger.info(f"Server Flask avviato sulla porta {port}")
     app.run(host="0.0.0.0", port=port)
