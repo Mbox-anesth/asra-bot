@@ -370,21 +370,17 @@ def webhook():
         
         update = Update.de_json(update_data, bot)
         
-        # Processa l'update nel loop asincrono
-        future = asyncio.run_coroutine_threadsafe(
+        # Processa l'update in modo NON bloccante (senza aspettare il risultato)
+        asyncio.run_coroutine_threadsafe(
             application.process_update(update),
             loop
         )
-        future.result(timeout=30)
-        logger.info("✅ Update processato")
+        logger.info("✅ Update inviato per processing (asincrono)")
         
-    except asyncio.TimeoutError:
-        logger.error("⏰ Timeout processamento update")
     except Exception as e:
         logger.error(f"❌ Errore: {e}")
     
     return "OK", 200
-
 @app.route('/test')
 def test():
     """Test connessione Telegram"""
