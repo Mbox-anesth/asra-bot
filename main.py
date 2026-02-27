@@ -5,8 +5,8 @@ import asyncio
 import time
 from flask import Flask, request
 from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup, Bot
-from telegram.ext import Application, CommandHandler, CallbackQueryHandler, ContextTypes, MessageHandler
-from telegram.ext import filters
+from telegram.ext import Application, CommandHandler, CallbackQueryHandler, ContextTypes, MessageHandler, filters
+
 # Configurazione logging
 logging.basicConfig(
     level=logging.INFO,
