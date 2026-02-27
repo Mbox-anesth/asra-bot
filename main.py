@@ -404,23 +404,11 @@ def health():
 if __name__ == "__main__":
     port = int(os.environ.get("PORT", 5000))
     
-    # Avvia il bot IN UN THREAD SEPARATO
-    import threading
+    # Inizializza il bot in modo sincrono PRIMA di avviare Flask
+    print("🟢 Avvio del bot Telegram...")
+    asyncio.run(setup_bot())  # Questo inizializza bot_app
+    print("🟢 Bot Telegram inizializzato con successo!")
     
-    def start_bot():
-        loop = asyncio.new_event_loop()
-        asyncio.set_event_loop(loop)
-        loop.run_until_complete(setup_bot())
-        logger.info("✅ Bot Telegram avviato e in esecuzione")
-        loop.run_forever()  # Mantiene il bot in esecuzione
-    
-    # Avvia il bot in background
-    bot_thread = threading.Thread(target=start_bot, daemon=True)
-    bot_thread.start()
-    
-    # Dai tempo al bot di avviarsi
-    import time
-    time.sleep(2)
-    
-    logger.info(f"🚀 Server Flask avviato sulla porta {port}")
+    # Ora avvia Flask
+    print(f"🟢 Avvio server Flask sulla porta {port}...")
     app.run(host="0.0.0.0", port=port)
