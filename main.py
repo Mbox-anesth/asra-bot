@@ -3,6 +3,7 @@ import sys
 import logging
 import asyncio
 import time
+import threading
 from flask import Flask, request
 from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup, Bot
 from telegram.ext import Application, CommandHandler, CallbackQueryHandler, ContextTypes, MessageHandler, filters
@@ -175,6 +176,7 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
         reply_markup=InlineKeyboardMarkup(keyboard),
         parse_mode="Markdown"
     )
+    logger.info(f"✅ Risposta inviata a user {update.effective_user.id}")
 
 async def menu_farmaci(update: Update, context: ContextTypes.DEFAULT_TYPE):
     query = update.callback_query
@@ -328,6 +330,7 @@ async def echo_all(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """Risponde a qualsiasi messaggio non gestito"""
     logger.info(f"📨 Echo handler: {update.message.text}")
     await update.message.reply_text(f"Hai scritto: {update.message.text}")
+    logger.info(f"✅ Echo risposta inviata")
 
 async def setup_application():
     """Setup dell'applicazione Telegram"""
@@ -356,6 +359,16 @@ async def setup_application():
 # Avvia l'applicazione all'avvio
 logger.info("🔄 Inizializzazione Application Telegram...")
 application = loop.run_until_complete(setup_application())
+
+# Avvia un thread per mantenere il loop in esecuzione
+def run_loop():
+    asyncio.set_event_loop(loop)
+    loop.run_forever()
+
+thread = threading.Thread(target=run_loop, daemon=True)
+thread.start()
+logger.info("✅ Loop asincrono avviato in thread separato")
+
 bot_ready = True
 logger.info("✅ Bot completamente pronto!")
 
