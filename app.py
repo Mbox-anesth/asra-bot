@@ -5,7 +5,7 @@ from flask import Flask, request
 from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup
 from telegram.ext import Application, CommandHandler, CallbackQueryHandler, ContextTypes
 
-# Configurazione logging
+# Configurazione logging avanzata
 logging.basicConfig(
     format='%(asctime)s - %(name)s - %(levelname)s - %(message)s',
     level=logging.INFO
@@ -17,7 +17,7 @@ app = Flask(__name__)
 # TOKEN del nuovo bot
 TOKEN = "8785372321:AAGhzTMpd7rH6du_Ct2ClkAjNL2rjs9U9Tk"
 
-# DATI LINEE GUIDA ASRA (aggiornati con tutti i farmaci)
+# DATI LINEE GUIDA ASRA (versione completa)
 FARMACI = {
     "apixaban": {"nome": "Apixaban", "categoria": "DOACs"},
     "rivaroxaban": {"nome": "Rivaroxaban", "categoria": "DOACs"},
@@ -34,7 +34,6 @@ FARMACI = {
     "aspirina": {"nome": "Aspirina/FANS", "categoria": "Antipiastrinici"},
 }
 
-# Linee guida complete
 LINEE_GUIDA = {
     ("apixaban", "alta"): {
         "sospensione": "≥ 72 ore",
@@ -134,7 +133,6 @@ LINEE_GUIDA = {
     },
 }
 
-# Classificazione blocchi
 BLOCCHI = {
     "superficiali": [
         "Sottotenoniano", "PECS I", "PECS II", "Serratus block", 
@@ -156,7 +154,7 @@ user_state = {}
 # HANDLER TELEGRAM
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """Handler per il comando /start"""
-    logger.info(f"Comando /start ricevuto da user {update.effective_user.id}")
+    logger.info(f"✅ /start ricevuto da user {update.effective_user.id}")
     keyboard = [[InlineKeyboardButton("💊 Seleziona Farmaco", callback_data="menu_farmaci")]]
     await update.message.reply_text(
         "👋 **Anticoagulanti & Anestesia** - Linee Guida ASRA 5a edizione (2025)\n\n"
@@ -191,7 +189,6 @@ async def menu_dosaggio(update: Update, context: ContextTypes.DEFAULT_TYPE):
     farmaco_id = query.data.replace("farmaco_", "")
     user_state[query.from_user.id] = {"farmaco": farmaco_id}
     
-    # Farmaci che hanno due dosaggi
     if farmaco_id in ["apixaban", "rivaroxaban", "dabigatran", "fondaparinux"]:
         keyboard = [
             [InlineKeyboardButton("💉 Alta dose", callback_data=f"dosaggio_{farmaco_id}_alta")],
@@ -274,7 +271,6 @@ async def mostra_raccomandazione(update: Update, context: ContextTypes.DEFAULT_T
     farmaco_id = parts[3]
     dosaggio = parts[4] if parts[4] != "None" else None
     
-    # Cerca linea guida
     linea = LINEE_GUIDA.get((farmaco_id, dosaggio))
     if not linea and dosaggio:
         linea = LINEE_GUIDA.get((farmaco_id, None))
@@ -331,10 +327,7 @@ async def setup_bot():
     global bot_app
     bot_app = Application.builder().token(TOKEN).build()
     
-    # Handler comandi
     bot_app.add_handler(CommandHandler("start", start))
-    
-    # Handler callback
     bot_app.add_handler(CallbackQueryHandler(menu_farmaci, pattern="^menu_farmaci$"))
     bot_app.add_handler(CallbackQueryHandler(menu_principale, pattern="^menu_principale$"))
     bot_app.add_handler(CallbackQueryHandler(menu_dosaggio, pattern="^farmaco_"))
@@ -344,53 +337,55 @@ async def setup_bot():
     
     await bot_app.initialize()
     await bot_app.start()
-    logger.info("Bot Telegram avviato con successo")
+    logger.info("✅ Bot Telegram avviato con successo")
     return bot_app
 
 # FLASK ENDPOINTS
 @app.route('/')
 def home():
-    """Home page"""
     return "Bot Anticoagulanti & Anestesia attivo! Cerca su Telegram: @AnticoagulantiEanestesiabot"
 
 @app.route('/webhook', methods=['POST'])
 def webhook():
-    """Endpoint per i webhook di Telegram"""
+    """Endpoint per i webhook di Telegram - VERSIONE CORRETTA"""
     if bot_app and request.is_json:
         try:
             # Ottieni i dati JSON
             update_data = request.get_json(force=True)
-            logger.debug(f"Webhook ricevuto: {update_data.get('update_id')}")
+            logger.info(f"📩 Webhook ricevuto - Update ID: {update_data.get('update_id')}")
             
             # Crea l'oggetto Update
             update = Update.de_json(update_data, bot_app.bot)
             
-            # Processa l'update in modo asincrono
+            # Forza l'esecuzione NEL LOOP DEL BOT e aspetta il risultato
             if bot_app.loop and bot_app.loop.is_running():
-                asyncio.run_coroutine_threadsafe(
+                future = asyncio.run_coroutine_threadsafe(
                     bot_app.process_update(update),
                     bot_app.loop
                 )
+                # Aspetta fino a 5 secondi che l'update venga processato
+                future.result(timeout=5)
+                logger.info("✅ Update processato con successo")
             else:
-                # Fallback: esegui in un loop separato
+                logger.warning("⚠️ Loop del bot non attivo, esecuzione in loop separato")
                 loop = asyncio.new_event_loop()
                 asyncio.set_event_loop(loop)
                 loop.run_until_complete(bot_app.process_update(update))
                 loop.close()
                 
+        except asyncio.TimeoutError:
+            logger.error("⏰ Timeout nel processare l'update (più di 5 secondi)")
         except Exception as e:
-            logger.error(f"Errore nel webhook: {e}", exc_info=True)
+            logger.error(f"❌ Errore nel webhook: {e}", exc_info=True)
     
     return "OK", 200
 
 @app.route('/health')
 def health():
-    """Health check per Render"""
     return "OK", 200
 
 # AVVIO
 if __name__ == "__main__":
-    # Configurazione porta per Render
     port = int(os.environ.get("PORT", 5000))
     
     # Avvia il bot in background
@@ -398,6 +393,5 @@ if __name__ == "__main__":
     asyncio.set_event_loop(loop)
     loop.run_until_complete(setup_bot())
     
-    # Avvia Flask
-    logger.info(f"Server Flask avviato sulla porta {port}")
+    logger.info(f"🚀 Server Flask avviato sulla porta {port}")
     app.run(host="0.0.0.0", port=port)
