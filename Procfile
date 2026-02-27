@@ -1,1 +1,1 @@
-web: gunicorn main:app -c gunicorn.conf.py
+web: gunicorn main:app --timeout 120 --workers 1 --log-level debug
