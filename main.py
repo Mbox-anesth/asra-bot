@@ -358,19 +358,31 @@ def home():
 
 @app.route('/webhook', methods=['POST'])
 def webhook():
-    logger.info("📩 Webhook ricevuto")
+    # Logging MOLTO esplicito
+    logger.info("="*50)
+    logger.info("🔵 FUNZIONE WEBHOOK CHIAMATA - INIZIO")
+    logger.info(f"🔵 Metodo richiesta: {request.method}")
+    logger.info(f"🔵 Headers: {dict(request.headers)}")
     
     if not application:
         logger.error("❌ Application non inizializzata")
         return "OK", 200
     
     try:
+        # Verifica che sia una richiesta JSON
+        if not request.is_json:
+            logger.error(f"❌ Richiesta non JSON: {request.data}")
+            return "OK", 200
+            
         update_data = request.get_json(force=True)
-        logger.info(f"Update ID: {update_data.get('update_id')}")
+        logger.info(f"📩 Update ricevuto - ID: {update_data.get('update_id')}")
+        
+        if 'message' in update_data:
+            logger.info(f"📨 Messaggio: {update_data['message'].get('text')}")
         
         update = Update.de_json(update_data, bot)
         
-        # Processa l'update in modo NON bloccante (senza aspettare il risultato)
+        # Processa l'update in modo NON bloccante
         asyncio.run_coroutine_threadsafe(
             application.process_update(update),
             loop
@@ -378,8 +390,10 @@ def webhook():
         logger.info("✅ Update inviato per processing (asincrono)")
         
     except Exception as e:
-        logger.error(f"❌ Errore: {e}")
+        logger.error(f"❌ Errore nel webhook: {e}", exc_info=True)
     
+    logger.info("🔵 FUNZIONE WEBHOOK CHIAMATA - FINE")
+    logger.info("="*50)
     return "OK", 200
 @app.route('/test')
 def test():
