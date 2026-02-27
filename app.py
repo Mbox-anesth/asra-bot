@@ -9,7 +9,7 @@ logging.basicConfig(format='%(asctime)s - %(name)s - %(levelname)s - %(message)s
 app = Flask(__name__)
 
 # TOKEN (il tuo)
-TOKEN = "AAEroINg6VQG4_qoGhTot4odcIssukEcWFA"
+TOKEN = "8775885572:AAEroINg6VQG4_qoGhTot4odcIssukEcWFA"
 
 # DATI LINEE GUIDA ASRA
 FARMACI = {
