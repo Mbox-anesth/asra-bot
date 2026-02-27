@@ -1,5 +1,6 @@
 import os
 import logging
+import asyncio
 from flask import Flask, request
 from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup
 from telegram.ext import Application, CommandHandler, CallbackQueryHandler, ContextTypes
@@ -8,7 +9,7 @@ from telegram.ext import Application, CommandHandler, CallbackQueryHandler, Cont
 logging.basicConfig(format='%(asctime)s - %(name)s - %(levelname)s - %(message)s', level=logging.INFO)
 app = Flask(__name__)
 
-# TOKEN (il tuo)
+# TOKEN completo
 TOKEN = "8775885572:AAEroINg6VQG4_qoGhTot4odcIssukEcWFA"
 
 # DATI LINEE GUIDA ASRA
@@ -97,7 +98,7 @@ user_state = {}
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
     keyboard = [[InlineKeyboardButton("💊 Seleziona Farmaco", callback_data="menu_farmaci")]]
     await update.message.reply_text(
-        "👋 **Linee Guida ASRA 5a edizione (2025)**\n\n"
+        "👋 **Anticoagulanti & Anestesia** - Linee Guida ASRA 5a edizione (2025)\n\n"
         "Questo bot fornisce le raccomandazioni per blocchi regionali "
         "in pazienti in terapia antitrombotica.\n\n"
         "Seleziona un'opzione:",
@@ -279,13 +280,34 @@ async def setup_bot():
 # FLASK ENDPOINTS
 @app.route('/')
 def home():
-    return "Bot ASRA attivo! Visita https://t.me/asra_guidelines_bot"
+    return "Bot Anticoagulanti & Anestesia attivo! Cerca su Telegram: @AnticoagulantiAnestesiaBot"
 
 @app.route('/webhook', methods=['POST'])
-async def webhook():
-    if bot_app:
-        update = Update.de_json(request.get_json(force=True), bot_app.bot)
-        await bot_app.process_update(update)
+def webhook():
+    if bot_app and request.is_json:
+        try:
+            # Otteniamo i dati JSON dalla richiesta
+            update_data = request.get_json(force=True)
+            
+            # Creiamo l'oggetto Update
+            update = Update.de_json(update_data, bot_app.bot)
+            
+            # Eseguiamo l'update in modo asincrono usando il loop del bot
+            if bot_app.loop.is_running():
+                asyncio.run_coroutine_threadsafe(
+                    bot_app.process_update(update),
+                    bot_app.loop
+                )
+            else:
+                # Fallback: eseguiamo in un loop separato
+                loop = asyncio.new_event_loop()
+                asyncio.set_event_loop(loop)
+                loop.run_until_complete(bot_app.process_update(update))
+                loop.close()
+                
+        except Exception as e:
+            logging.error(f"Errore nel webhook: {e}")
+    
     return "OK", 200
 
 @app.route('/health')
@@ -294,8 +316,13 @@ def health():
 
 # AVVIO
 if __name__ == "__main__":
-    import asyncio
+    # Configurazione per il deploy
+    port = int(os.environ.get("PORT", 5000))
+    
+    # Avvia il bot in background
     loop = asyncio.new_event_loop()
     asyncio.set_event_loop(loop)
     loop.run_until_complete(setup_bot())
-    app.run(host="0.0.0.0", port=int(os.environ.get("PORT", 5000)))
+    
+    # Avvia Flask
+    app.run(host="0.0.0.0", port=port)
