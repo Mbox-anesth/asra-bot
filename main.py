@@ -406,27 +406,21 @@ def webhook():
         
         logger.info(f"🔄 Invio update al bot...")
         
+        # Aumentiamo il timeout a 30 secondi
         future = asyncio.run_coroutine_threadsafe(
             bot_app.process_update(update),
             bot_loop
         )
-        future.result(timeout=10)
+        
+        # Aspetta con timeout più lungo
+        future.result(timeout=30)
         logger.info("✅ Update processato con successo")
         
     except asyncio.TimeoutError:
-        logger.error("⏰ Timeout nel processare l'update")
+        logger.error("⏰ Timeout nel processare l'update (30s)")
+        # Non ritorniamo errore a Telegram per evitare che ritenti
     except Exception as e:
         logger.error(f"❌ Errore nel webhook: {e}", exc_info=True)
     
     logger.info("🔵 WEBHOOK CHIAMATO - FINE")
     return "OK", 200
-
-@app.route('/health')
-def health():
-    status = "ready" if bot_ready else "starting"
-    return f"Bot status: {status}", 200
-
-if __name__ == "__main__":
-    port = int(os.environ.get("PORT", 5000))
-    logger.info(f"🚀 Avvio server Flask sulla porta {port}")
-    app.run(host="0.0.0.0", port=port)
